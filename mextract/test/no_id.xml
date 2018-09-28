@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SAMPLE alias="TARA_N000002741" center_name="Genoscope" accession="ERS494529">
+     <IDENTIFIERS>
+          <EXTERNAL_ID namespace="BioSample">SAMEA2623861</EXTERNAL_ID>
+          <SUBMITTER_ID namespace="GSC">TARA_N000002741</SUBMITTER_ID>
+     </IDENTIFIERS>
+</SAMPLE>
