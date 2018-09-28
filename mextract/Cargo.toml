@@ -1,0 +1,9 @@
+[package]
+name = "mextract"
+version = "0.1.0"
+authors = ["Ken Youens-Clark <kyclark@gmail.com>"]
+
+[dependencies]
+clap = "~2.32"
+xmltree = "0.8.0"
+sxd-xpath = "0.4.1"
