@@ -10,43 +10,4 @@
           <TAXON_ID>408172</TAXON_ID>
           <SCIENTIFIC_NAME>marine metagenome</SCIENTIFIC_NAME>
      </SAMPLE_NAME>
-     <DESCRIPTION>"This sample (TARA_N000002741) was collected during the Tara Oceans expedition (2009-2013) at station TARA_151 (latitudeN=36.1715, longitudeE=-29.023) on date/time=2012-03-09T08:59, using a PUMP (High Volume Peristaltic Pump).  The sample material (particulate matter, including plankton (ENVO:xxxxxxxx)) was collected at a depth of 3-7 m, targeting a surface water layer (ENVO:00002042) in the marine biome (ENVO:00000447). The sample was size-fractionated (0.8-5 micrometres), and stored in liquid nitrogen for later detection of unicellular eukaryote (protist) nucleic acid sequences by pyrosequencing methods, and for later metagenomics/transcriptomics analysis. This sample has replicate sample(s): TARA_N000002742."</DESCRIPTION>
-     <SAMPLE_LINKS>
-          <SAMPLE_LINK>
-               <XREF_LINK>
-                    <DB>ENA-STUDY</DB>
-                    <ID>ERP003628,ERP006156-ERP006157,ERP018626</ID>
-               </XREF_LINK>
-          </SAMPLE_LINK>
-          <SAMPLE_LINK>
-               <XREF_LINK>
-                    <DB>ENA-EXPERIMENT</DB>
-                    <ID>ERX948070,ERX1788970,ERX1789536,ERX1823285</ID>
-               </XREF_LINK>
-          </SAMPLE_LINK>
-          <SAMPLE_LINK>
-               <XREF_LINK>
-                    <DB>ENA-RUN</DB>
-                    <ID>ERR868459,ERR1718757,ERR1719440,ERR1756353</ID>
-               </XREF_LINK>
-          </SAMPLE_LINK>
-          <SAMPLE_LINK>
-               <XREF_LINK>
-                    <DB>ENA-SUBMISSION</DB>
-                    <ID>ERA323383</ID>
-               </XREF_LINK>
-          </SAMPLE_LINK>
-          <SAMPLE_LINK>
-               <XREF_LINK>
-                    <DB>ENA-FASTQ-FILES</DB>
-                    <ID><![CDATA[http://www.ebi.ac.uk/ena/data/warehouse/filereport?accession=ERS494529&result=read_run&fields=run_accession,fastq_ftp,fastq_md5,fastq_bytes]]></ID>
-               </XREF_LINK>
-          </SAMPLE_LINK>
-          <SAMPLE_LINK>
-               <XREF_LINK>
-                    <DB>ENA-SUBMITTED-FILES</DB>
-                    <ID><![CDATA[http://www.ebi.ac.uk/ena/data/warehouse/filereport?accession=ERS494529&result=read_run&fields=run_accession,submitted_ftp,submitted_md5,submitted_bytes,submitted_format]]></ID>
-               </XREF_LINK>
-          </SAMPLE_LINK>
-     </SAMPLE_LINKS>
 </SAMPLE>
