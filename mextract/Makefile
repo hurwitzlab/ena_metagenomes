@@ -1,5 +1,5 @@
 good:
-	cargo run -- --xml test/ena-3639.xml
+	cargo run -- test/ena-3639.xml
 
 noid:
-	cargo run -- --xml test/no_id.xml
+	cargo run -- test/no_id.xml
