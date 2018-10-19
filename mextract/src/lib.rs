@@ -1,21 +1,21 @@
-extern crate xmltree;
+extern crate chrono;
 extern crate clap;
 extern crate regex;
-extern crate chrono;
 extern crate time;
+extern crate xmltree;
 
+use chrono::{Date, DateTime, TimeZone, Utc};
 use clap::{App, Arg};
-use chrono::{Date, DateTime, Utc, TimeZone};
-use regex::{Regex, RegexSet, Captures};
-use std::fs::{self, File};
+use regex::{Captures, Regex, RegexSet};
 use std::error::Error;
+use std::fs::{self, File};
 use std::str::FromStr;
 use time::Duration;
 use xmltree::Element;
 
 #[derive(Debug)]
 pub struct Config {
-    input: Vec<String>
+    input: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -23,6 +23,13 @@ struct Attr {
     tag: String,
     value: String,
     units: Option<String>,
+}
+
+#[derive(Debug)]
+struct PossibleDate {
+    tag: String,
+    value: DateTime<Utc>,
+    tag_ok: bool,
 }
 
 type MyResult<T> = Result<T, Box<Error>>;
@@ -109,14 +116,18 @@ fn parse_xml(root: Element) -> MyResult<()> {
     let id = get_primary_id(&root)?;
     println!("id {:?}", id);
 
-    let attrs = get_attributes(&root)?;
-    println!("attr {:?}", attrs);
-
     let runs = get_runs(&root);
     println!("runs {:?}", runs);
 
+    let skip_re = Regex::new(r"^ENA-").unwrap();
+    let attrs = get_attributes(&root, Some(skip_re))?;
+    println!("attr {:?}", attrs);
+
     let dates = get_dates(&attrs);
     println!("dates {:?}", dates);
+
+    let depth = get_depth(&attrs);
+    println!("depth {:?}", depth);
 
     Ok(())
 }
@@ -125,17 +136,17 @@ fn parse_xml(root: Element) -> MyResult<()> {
 fn get_primary_id(root: &Element) -> MyResult<String> {
     let ids = match root.get_child("IDENTIFIERS") {
         Some(x) => x,
-        _ => return Err(From::from("Missing IDENTIFIERS"))
+        _ => return Err(From::from("Missing IDENTIFIERS")),
     };
 
     let primary_id = match ids.get_child("PRIMARY_ID") {
         Some(pid) => pid.text.as_ref(),
-        _ => return Err(From::from("Missing PRIMARY_ID node"))
+        _ => return Err(From::from("Missing PRIMARY_ID node")),
     };
 
     let id = match primary_id {
         Some(z) => z,
-        _ => return Err(From::from("Missing PRIMARY_ID value"))
+        _ => return Err(From::from("Missing PRIMARY_ID value")),
     };
 
     Ok(id.to_string())
@@ -167,22 +178,32 @@ fn get_runs(root: &Element) -> Option<Vec<String>> {
 
 // --------------------------------------------------
 fn get_child_text(element: &Element, tag: &str) -> Option<String> {
-    element.get_child(tag).and_then(
-        |child| child.text.as_ref().and_then(|val| Some(val.to_string())))
+    element.get_child(tag).and_then(|child| {
+        child.text.as_ref().and_then(|val| Some(val.to_string()))
+    })
 }
 
 // --------------------------------------------------
-fn get_attributes(root: &Element) -> MyResult<Vec<Attr>> {
+fn get_attributes(root: &Element, skip: Option<Regex>) -> MyResult<Vec<Attr>> {
+    let skip_tag = |tag: &str| match &skip {
+        Some(re) => re.is_match(tag),
+        _ => false,
+    };
+
     match root.get_child("SAMPLE_ATTRIBUTES") {
         Some(attributes) => {
             let mut attrs: Vec<Attr> = vec![];
-            for attr in attributes.children.iter() { 
+            for attr in attributes.children.iter() {
                 if let Some(tag) = get_child_text(&attr, "TAG") {
+                    if skip_tag(&tag) {
+                        continue;
+                    }
+
                     if let Some(value) = get_child_text(&attr, "VALUE") {
                         attrs.push(Attr {
-                            tag : tag,
-                            value : value,
-                            units : get_child_text(attr, "UNITS"),
+                            tag: tag,
+                            value: value,
+                            units: get_child_text(attr, "UNITS"),
                         });
                     }
                 }
@@ -190,14 +211,80 @@ fn get_attributes(root: &Element) -> MyResult<Vec<Attr>> {
             println!("attr = {:?}", attrs);
             Ok(attrs)
         }
-        _ => Err(From::from("Missing SAMPLE_ATTRIBUTES"))
+        _ => Err(From::from("Missing SAMPLE_ATTRIBUTES")),
     }
 }
 
 // --------------------------------------------------
-fn get_dates(attrs: &Vec<Attr>) -> Vec<u32> {
-    let mut ret = vec![];
-    let tags = [
+fn get_depth(attrs: &Vec<Attr>) -> Option<f64> {
+    let tag_re = Regex::new(
+        r"(?i)^(?:geographic(?:al)? location [(])?depth[)]?",
+    ).unwrap();
+
+    for attr in attrs.iter() {
+        if tag_re.is_match(&attr.tag) {
+            return parse_depth(&attr.value);
+        }
+    }
+
+    None
+}
+
+// --------------------------------------------------
+fn parse_depth(val: &str) -> Option<f64> {
+    let pat = r"(?x)
+        ^
+        (?P<num>\d+(?:\.(?:\d+)?)?)
+        \s*
+        (?P<unit>\w+)?
+        $
+        ";
+
+    let re = Regex::new(pat).unwrap();
+    if let Some(caps) = re.captures(&val) {
+        let mult = match caps.name("unit") {
+            Some(unit_val) => {
+                let unit_pat = r"(?ix)
+                    ^
+                    (?P<prefix>c(?:enti)?|m(?:illi)?)?
+                    m
+                    (?:eters?)?
+                    $
+                    ";
+                let unit_re = Regex::new(&unit_pat).unwrap();
+
+                if let Some(c) = unit_re.captures(&unit_val.as_str()) {
+                    if let Some(m) = c.name("prefix") {
+                        match m.as_str() {
+                            "c" => 0.01,
+                            "centi" => 0.01,
+                            "m" => 0.001,
+                            "milli" => 0.001,
+                            _ => 1.,
+                        }
+                    } else {
+                        1.
+                    }
+                } else {
+                    1.
+                }
+            }
+            _ => 1.,
+        };
+
+        if let Some(num) = caps.name("num") {
+            if let Ok(n) = num.as_str().parse::<f64>() {
+                return Some(n * mult);
+            }
+        }
+    }
+
+    None
+}
+
+// --------------------------------------------------
+fn get_dates(attrs: &Vec<Attr>) -> Option<Vec<PossibleDate>> {
+    let tag_patterns = [
         r"(?xi)
         ^
         (?:event|collection)
@@ -229,45 +316,34 @@ fn get_dates(attrs: &Vec<Attr>) -> Vec<u32> {
         ",
     ];
 
-    let iso_pattern = r"(?x)
-        ^
-        (?P<year>\d{4})
-        -
-        (?P<month>\d{2})
-        -
-        (?P<day>\d{2})
-        T
-        (?P<hour>\d+)
-        :
-        (?P<minutes>\d+)
-        (?:
-          [:]
-          (?P<seconds>\d+)
-        )?
-        ";
-
-    let iso_re = Regex::new(iso_pattern).unwrap();
-        //r"^(\d{4})[-](\d{1,2})(?:\/.+)?$",
-
     // cf https://docs.rs/chrono/0.4.0/chrono/format/strftime/index.html
-    let tag_re = RegexSet::new(&tags).unwrap();
+    let tag_re = RegexSet::new(&tag_patterns).unwrap();
 
+    let mut dates: Vec<PossibleDate> = vec![];
     for attr in attrs.iter() {
         let val = &attr.value;
-        let tag_match = tag_re.is_match(&attr.tag);
+        //println!("\n\n{} = {}", attr.tag, val);
 
-        println!("\n\n{} = {}", attr.tag, val);
-
-        if let Some(cap) = iso_re.captures(val) {
-            println!("cap = {:?}", cap);
-            if let Some(dt) = cap_to_dt(&cap) {
-                println!("dt = {:?}", dt);
-            }
+        if let Some(dt) = parse_datetime(&val) {
+            //println!("DATE => {:?}", dt);
+            dates.push(PossibleDate {
+                tag: attr.tag.to_string(),
+                value: dt,
+                tag_ok: tag_re.is_match(&attr.tag),
+            });
         }
-
-        ret.push(if tag_match { 1 } else { 0 });
     }
-    ret
+
+    if dates.len() > 0 {
+        let num_ok = &dates.iter().filter(|d| d.tag_ok).count() as u32;
+        if num_ok == 1 {
+            Some(dates.iter().filter(|d| d.tag_ok).collect())
+        } else {
+            Some(dates)
+        }
+    } else {
+        None
+    }
 }
 
 // --------------------------------------------------
@@ -275,7 +351,6 @@ fn parse_datetime(val: &str) -> Option<DateTime<Utc>> {
     let patterns = vec![
         // Excel
         r"^(?P<excel>\d{5})$",
-
         // ISO (sort of)
         r"(?x)
         ^
@@ -293,7 +368,6 @@ fn parse_datetime(val: &str) -> Option<DateTime<Utc>> {
           (?P<seconds>\d+)
         )?
         ",
-
         // 2017-06-16Z
         r"(?x)
         ^
@@ -305,7 +379,6 @@ fn parse_datetime(val: &str) -> Option<DateTime<Utc>> {
         Z
         $
         ",
-
         // 2017-06-16/2017-07-09
         r"(?x)
         ^
@@ -322,7 +395,6 @@ fn parse_datetime(val: &str) -> Option<DateTime<Utc>> {
         \d{2}
         $
         ",
-
         // 2015-01, 2015-01/2015-02
         r"(?x)
         ^
@@ -337,7 +409,6 @@ fn parse_datetime(val: &str) -> Option<DateTime<Utc>> {
         )?
         $
         ",
-
         // 20100910
         r"(?x)
         ^
@@ -346,7 +417,6 @@ fn parse_datetime(val: &str) -> Option<DateTime<Utc>> {
         (?P<day>\d{2})
         $
         ",
-
         // 12/06, 2/14-6/14
         r"(?x)
         ^
@@ -361,7 +431,6 @@ fn parse_datetime(val: &str) -> Option<DateTime<Utc>> {
         )?
         $
         ",
-
         // Dec-2015
         r"(?xi)
         ^
@@ -372,7 +441,6 @@ fn parse_datetime(val: &str) -> Option<DateTime<Utc>> {
         (?P<year>\d{4})
         $
         ",
-
         // March-April 2017
         r"(?xi)
         ^
@@ -385,7 +453,6 @@ fn parse_datetime(val: &str) -> Option<DateTime<Utc>> {
         (?P<year>\d{4})
         $
         ",
-
         // July of 2011
         r"(?xi)
         ^
@@ -397,7 +464,6 @@ fn parse_datetime(val: &str) -> Option<DateTime<Utc>> {
         (?P<year>\d{4})
         $
         ",
-
         // 2008 August
         r"(?xi)
         ^
@@ -415,7 +481,7 @@ fn parse_datetime(val: &str) -> Option<DateTime<Utc>> {
         if let Some(cap) = re.captures(&val) {
             //println!("YAY! {:?}", cap);
             if let Some(dt) = cap_to_dt(&cap) {
-                return Some(dt)
+                return Some(dt);
             }
         }
     }
@@ -426,13 +492,11 @@ fn parse_datetime(val: &str) -> Option<DateTime<Utc>> {
 // --------------------------------------------------
 fn cap_to_int<T: FromStr>(cap: &Captures, name: &str) -> Option<T> {
     match cap.name(name) {
-        Some(val) => {
-            match val.as_str().parse::<T>() {
-                Ok(i) => Some(i),
-                _ => None,
-            }
-        }
-        _ => None
+        Some(val) => match val.as_str().parse::<T>() {
+            Ok(i) => Some(i),
+            _ => None,
+        },
+        _ => None,
     }
 }
 
@@ -467,8 +531,7 @@ fn month_to_int(month_name: &str) -> Option<u32> {
 fn cap_to_dt(cap: &Captures) -> Option<DateTime<Utc>> {
     if let Some(days) = cap_to_int::<i64>(&cap, "excel") {
         Some(Utc.ymd(1904, 1, 1).and_hms(0, 0, 0) + Duration::days(days))
-    }
-    else {
+    } else {
         let hour = cap_to_int::<u32>(&cap, "hour").unwrap_or(0);
         let minutes = cap_to_int::<u32>(&cap, "minutes").unwrap_or(0);
         let seconds = cap_to_int::<u32>(&cap, "seconds").unwrap_or(0);
@@ -476,22 +539,22 @@ fn cap_to_dt(cap: &Captures) -> Option<DateTime<Utc>> {
 
         match cap_to_int::<i32>(&cap, "year") {
             Some(mut year) => {
-                if year < 100 { 
+                if year < 100 {
                     year += 2000;
                 }
 
-                let maybe_month = cap_to_int::<u32>(&cap, "month").or_else(||
-                    cap.name("month").and_then(|m| month_to_int(m.as_str()))
+                let maybe_month = cap_to_int::<u32>(&cap, "month").or_else(
+                    || cap.name("month").and_then(|m| month_to_int(m.as_str())),
                 );
 
                 match maybe_month {
-                    Some(month) => {
-                        Some(Utc.ymd(year, month, day)
-                             .and_hms(hour, minutes, seconds))
-                    },
-                    _ => None
+                    Some(month) => Some(
+                        Utc.ymd(year, month, day)
+                            .and_hms(hour, minutes, seconds),
+                    ),
+                    _ => None,
                 }
-            },
+            }
             _ => None,
         }
     }
@@ -548,7 +611,7 @@ fn fails_no_attributres() {
 #[test]
 fn test_parse_datetime() {
     let vs = vec![
-        "2012-03-09T08:59", 
+        "2012-03-09T08:59",
         "2012-03-09T08:59:03",
         "2017-06-16Z",
         "2015-01",
@@ -581,4 +644,23 @@ fn test_month_to_int() {
     assert_eq!(month_to_int("JANUARY"), Some(1));
     assert_eq!(month_to_int("Jun"), Some(6));
     assert_eq!(month_to_int("foo"), None);
+}
+
+#[test]
+fn test_parse_depth() {
+    assert_eq!(parse_depth("abc"), None);
+    assert_eq!(parse_depth("5"), Some(5.));
+    assert_eq!(parse_depth("5 m"), Some(5.));
+    assert_eq!(parse_depth("5 meter"), Some(5.));
+    assert_eq!(parse_depth("5 meters"), Some(5.));
+    assert_eq!(parse_depth("5meters"), Some(5.));
+    assert_eq!(parse_depth("5m"), Some(5.));
+    assert_eq!(parse_depth("5 cm"), Some(0.05));
+    assert_eq!(parse_depth("5cm"), Some(0.05));
+    assert_eq!(parse_depth("5 centimeters"), Some(0.05));
+    assert_eq!(parse_depth("5centimeters"), Some(0.05));
+    assert_eq!(parse_depth("5 mm"), Some(0.005));
+    assert_eq!(parse_depth("5mm"), Some(0.005));
+    assert_eq!(parse_depth("5 millimeter"), Some(0.005));
+    assert_eq!(parse_depth("5millimeters"), Some(0.005));
 }
