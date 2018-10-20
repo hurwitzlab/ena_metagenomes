@@ -232,49 +232,63 @@ fn get_depth(attrs: &Vec<Attr>) -> Option<f64> {
 
 // --------------------------------------------------
 fn parse_depth(val: &str) -> Option<f64> {
-    let pat = r"(?x)
+    println!("VAL = {}", val);
+    let patterns = vec![
+        // 5, 5., 5.0
+        r"(?x)
         ^
         (?P<num>\d+(?:\.(?:\d+)?)?)
         \s*
         (?P<unit>\w+)?
         $
-        ";
+        ",
+        // .5, 0.5
+        r"(?x)
+        ^
+        (?P<num>(?:\d+)?\.\d+)
+        \s*
+        (?P<unit>\w+)?
+        $
+        ",
+    ];
 
-    let re = Regex::new(pat).unwrap();
-    if let Some(caps) = re.captures(&val) {
-        let mult = match caps.name("unit") {
-            Some(unit_val) => {
-                let unit_pat = r"(?ix)
-                    ^
-                    (?P<prefix>c(?:enti)?|m(?:illi)?)?
-                    m
-                    (?:eters?)?
-                    $
-                    ";
-                let unit_re = Regex::new(&unit_pat).unwrap();
+    for pattern in patterns {
+        let re = Regex::new(&pattern).unwrap();
+        if let Some(caps) = re.captures(&val) {
+            let mult = match caps.name("unit") {
+                Some(unit_val) => {
+                    let unit_pat = r"(?ix)
+                        ^
+                        (?P<prefix>c(?:enti)?|m(?:illi)?)?
+                        m
+                        (?:eters?)?
+                        $
+                        ";
+                    let unit_re = Regex::new(&unit_pat).unwrap();
 
-                if let Some(c) = unit_re.captures(&unit_val.as_str()) {
-                    if let Some(m) = c.name("prefix") {
-                        match m.as_str() {
-                            "c" => 0.01,
-                            "centi" => 0.01,
-                            "m" => 0.001,
-                            "milli" => 0.001,
-                            _ => 1.,
+                    if let Some(c) = unit_re.captures(&unit_val.as_str()) {
+                        if let Some(m) = c.name("prefix") {
+                            match m.as_str() {
+                                "c" => 0.01,
+                                "centi" => 0.01,
+                                "m" => 0.001,
+                                "milli" => 0.001,
+                                _ => 1.,
+                            }
+                        } else {
+                            1.
                         }
                     } else {
                         1.
                     }
-                } else {
-                    1.
                 }
-            }
-            _ => 1.,
-        };
+                _ => 1.,
+            };
 
-        if let Some(num) = caps.name("num") {
-            if let Ok(n) = num.as_str().parse::<f64>() {
-                return Some(n * mult);
+            if let Some(num) = caps.name("num") {
+                if let Ok(n) = num.as_str().parse::<f64>() {
+                    return Some(n * mult);
+                }
             }
         }
     }
@@ -334,16 +348,18 @@ fn get_dates(attrs: &Vec<Attr>) -> Option<Vec<PossibleDate>> {
         }
     }
 
-    if dates.len() > 0 {
-        let num_ok = &dates.iter().filter(|d| d.tag_ok).count() as u32;
-        if num_ok == 1 {
-            Some(dates.iter().filter(|d| d.tag_ok).collect())
-        } else {
-            Some(dates)
-        }
-    } else {
-        None
-    }
+    //if dates.len() > 0 {
+    //    let num_ok = &dates.iter().filter(|d| d.tag_ok).count() as u32;
+    //    if num_ok == 1 {
+    //        Some(dates.iter().filter(|d| d.tag_ok).collect())
+    //    } else {
+    //        Some(dates)
+    //    }
+    //} else {
+    //    None
+    //}
+
+    Some(dates)
 }
 
 // --------------------------------------------------
@@ -650,17 +666,19 @@ fn test_month_to_int() {
 fn test_parse_depth() {
     assert_eq!(parse_depth("abc"), None);
     assert_eq!(parse_depth("5"), Some(5.));
+    assert_eq!(parse_depth("5.0"), Some(5.));
     assert_eq!(parse_depth("5 m"), Some(5.));
-    assert_eq!(parse_depth("5 meter"), Some(5.));
-    assert_eq!(parse_depth("5 meters"), Some(5.));
+    assert_eq!(parse_depth(".5 meter"), Some(0.5));
+    assert_eq!(parse_depth("0.5 meters"), Some(0.5));
     assert_eq!(parse_depth("5meters"), Some(5.));
     assert_eq!(parse_depth("5m"), Some(5.));
     assert_eq!(parse_depth("5 cm"), Some(0.05));
     assert_eq!(parse_depth("5cm"), Some(0.05));
-    assert_eq!(parse_depth("5 centimeters"), Some(0.05));
+    assert_eq!(parse_depth("5. centimeters"), Some(0.05));
     assert_eq!(parse_depth("5centimeters"), Some(0.05));
     assert_eq!(parse_depth("5 mm"), Some(0.005));
     assert_eq!(parse_depth("5mm"), Some(0.005));
     assert_eq!(parse_depth("5 millimeter"), Some(0.005));
+    assert_eq!(parse_depth("0.005m"), Some(0.005));
     assert_eq!(parse_depth("5millimeters"), Some(0.005));
 }
