@@ -129,6 +129,9 @@ fn parse_xml(root: Element) -> MyResult<()> {
     let depth = get_depth(&attrs);
     println!("depth {:?}", depth);
 
+    let lat_lon = get_lat_lon(&attrs);
+    println!("lat_lon {:?}", lat_lon);
+
     Ok(())
 }
 
@@ -360,6 +363,42 @@ fn get_dates(attrs: &Vec<Attr>) -> Option<Vec<PossibleDate>> {
     //}
 
     Some(dates)
+}
+
+// --------------------------------------------------
+fn get_lat_lon(attrs: &Vec<Attr>) -> Option<&str> {
+    let tag_patterns = vec![
+        r"(?x)
+        ^
+        lat[\s_]lon
+        $
+        ",
+        r"(?x)
+        ^(?:geographic(?:al)? location [(])?latitude and longitude(?:[)])?
+        ",
+    ];
+
+    let tag_res: Vec<Regex> = tag_patterns
+        .into_iter()
+        .map(|p| Regex::new(p).unwrap())
+        .collect();
+
+    for attr in attrs.iter() {
+        for tag_re in &tag_res {
+            println!("tag = {}", &attr.tag);
+            if tag_re.is_match(&attr.tag) {
+                return Some(&attr.value);
+                //return parse_lat_lon(&attr.value);
+            }
+        }
+    }
+
+    None
+}
+
+// --------------------------------------------------
+fn parse_lat_lon(val: &str) -> Option<()> {
+    None
 }
 
 // --------------------------------------------------
