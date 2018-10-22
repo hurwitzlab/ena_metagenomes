@@ -4,12 +4,13 @@ extern crate regex;
 extern crate time;
 extern crate xmltree;
 
-use chrono::{Date, DateTime, TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc}; // Date
 use clap::{App, Arg};
 use regex::{Captures, Regex, RegexSet};
 use std::error::Error;
 use std::fs::{self, File};
 use std::str::FromStr;
+use std::collections::HashMap;
 use time::Duration;
 use xmltree::Element;
 
@@ -33,6 +34,7 @@ struct PossibleDate {
 }
 
 type MyResult<T> = Result<T, Box<Error>>;
+//type Latitude<f64> = Latitude<f64>;
 
 // --------------------------------------------------
 // Public
@@ -367,29 +369,83 @@ fn get_dates(attrs: &Vec<Attr>) -> Option<Vec<PossibleDate>> {
 
 // --------------------------------------------------
 fn get_lat_lon(attrs: &Vec<Attr>) -> Option<&str> {
-    let tag_patterns = vec![
-        r"(?x)
+    let tag_patterns_combined = vec![
+        r"(?xi)
         ^
         lat[\s_]lon
         $
         ",
-        r"(?x)
+        r"(?xi)
         ^(?:geographic(?:al)? location [(])?latitude and longitude(?:[)])?
         ",
     ];
 
-    let tag_res: Vec<Regex> = tag_patterns
-        .into_iter()
-        .map(|p| Regex::new(p).unwrap())
-        .collect();
+    let tag_patterns_lat = vec![
+        r"(?xi)
+        ^
+        latitude
+        $
+        ",
+        r"(?xi)
+        ^
+        (?:geographic(?:al)?
+        \s+
+        location
+        \s+[(])?
+        lat(?:itude)?[)]?
+        (?:\s+start)?
+        $
+        ",
+    ];
+
+    let tag_patterns_lon = vec![
+        r"(?xi)
+        ^
+        longitude
+        $
+        ",
+        r"(?xi)
+        ^
+        (?:geographic(?:al)?
+        \s+
+        location
+        \s+[(])?
+        lon(?:gitude)?[)]? 
+        (?:\s+start)?
+        $
+        ",
+        r"(?xi)
+        ^longitude(?:_deg|\s+start)?$
+        ",
+    ];
+
+    fn re_fct(v: &Vec<&str>) -> Vec<Regex> {
+        v.into_iter().map(|p| Regex::new(p).unwrap()).collect()
+    }
+
+    let mut pat_map: HashMap<String, Vec<Regex>> = HashMap::new();
+    pat_map.insert("combined".to_string(), re_fct(&tag_patterns_combined));
+    pat_map.insert("lat".to_string(), re_fct(&tag_patterns_lat));
+    pat_map.insert("lon".to_string(), re_fct(&tag_patterns_lon));
+
+    let classify_tag = |tag: &str| {
+        for (class, tag_regexes) in pat_map.iter() {
+            for tag_re in tag_regexes {
+                if tag_re.is_match(&tag) {
+                    return Some(class);
+                }
+            }
+        }
+        None
+    };
 
     for attr in attrs.iter() {
-        for tag_re in &tag_res {
-            println!("tag = {}", &attr.tag);
-            if tag_re.is_match(&attr.tag) {
-                return Some(&attr.value);
-                //return parse_lat_lon(&attr.value);
-            }
+        if let Some(class) = classify_tag(&attr.tag) {
+            println!("tag \"{}\" = {}", &attr.tag, &class);
+
+            //let parser = match class {
+
+            //};
         }
     }
 
@@ -397,8 +453,135 @@ fn get_lat_lon(attrs: &Vec<Attr>) -> Option<&str> {
 }
 
 // --------------------------------------------------
-fn parse_lat_lon(val: &str) -> Option<()> {
+fn dms2decimal(degree: &str, min: &str, sec: &str, negate: &bool) -> Option<String> {
+    if let Ok(degree) = degree.parse::<f64>() {
+        if let Ok(min) = min.parse::<f64>() {
+            if let Ok(sec) = sec.parse::<f64>() {
+                return Some(format!("{:.5}", degree + (min/60.0) + (sec/3600.0)));
+            }
+        }
+    }
     None
+}
+
+// --------------------------------------------------
+fn parse_lat_lon_combined(val: &str) -> Option<(String, String)> {
+    // 41º40,13.5''N 2º48'00.6''E
+    let p1 = r"(?x)
+        ^
+        \s*
+        (?P<lat_degrees>\d+)
+        [ºÁ]?
+        (?P<lat_minutes>\d+)
+        [,’']
+        (?P<lat_seconds>\d+(?:\.\d+)?)
+        ['’]{2}?
+        (?:[\s']*(?P<lat_direction>[NS]))?
+        (?:\s+|\s*,\s*)
+        (?P<lon_degrees>\d+)
+        [ºÁ]?
+        (?P<lon_minutes>\d+)
+        [,’']
+        (?P<lon_seconds>\d+(?:\.\d+)?)
+        ['’]{2}?
+        (?:[\s']*(?P<lon_direction>[EW]))?
+        $
+        ";
+
+    println!("p1 = {}", p1);
+    println!("val = {}", val);
+    let re1 = Regex::new(p1).unwrap();
+
+    let (lat, lon) = if let Some(caps) = re1.captures(&val) {
+        println!("caps = {:?}", caps);
+
+        let lat1 = if let Some(deg) = caps.name("lat_degrees") {
+            if let Some(min) = caps.name("lat_minutes") {
+                if let Some(sec) = caps.name("lat_seconds") {
+                    let negate = match caps.name("lat_direction") {
+                        Some(d) => match d.as_str() {
+                            "S" | "s" => true,
+                            _ => false,
+                        }
+                        _ => false
+                    };
+
+                    dms2decimal(&deg.as_str(), 
+                                &min.as_str(), 
+                                &sec.as_str(), 
+                                &negate)
+                }
+                else {
+                    None
+                }
+            }
+            else {
+                None
+            }
+        }
+        else {
+            None
+        };
+
+        let lon1 = if let Some(deg) = caps.name("lon_degrees") {
+            if let Some(min) = caps.name("lon_minutes") {
+                if let Some(sec) = caps.name("lon_seconds") {
+                    let negate = match caps.name("lon_direction") {
+                        Some(d) => match d.as_str() {
+                            "W" | "w" => true,
+                            _ => false,
+                        }
+                        _ => false
+                    };
+                    dms2decimal(&deg.as_str(), 
+                                &min.as_str(), 
+                                &sec.as_str(),
+                                &negate)
+                }
+                else {
+                    None
+                }
+            }
+            else {
+                None
+            }
+        }
+        else {
+            None
+        };
+
+        (lat1, lon1)
+    }
+    else {
+        (None, None)
+    };
+
+    println!("LAT = {:?}", lat);
+    println!("LON = {:?}", lon);
+
+    match (lat, lon) {
+        (Some(n), Some(m)) => Some((n, m)),
+        _ => None,
+    }
+
+//    let patterns = vec![
+//        r"(?x)
+//        ^
+//        (?:lat:?\s*)?
+//        ($RE{'num'}{'real'})
+//        (?:\s*([NS]))?
+//        (?:_|\s+|\s*,\s*)
+//        (?:long:?\s*)?
+//        ($RE{'num'}{'real'})
+//        (?:\s*([EW]))?
+//        (?:,\s+decimal\s+degrees)?
+//        $
+//        ",
+//    ];
+
+//    for pattern in patterns {
+//        let re = Regex::new(pattern).unwrap();
+//    }
 }
 
 // --------------------------------------------------
@@ -616,9 +799,8 @@ fn cap_to_dt(cap: &Captures) -> Option<DateTime<Utc>> {
 }
 
 // --------------------------------------------------
-// here be tests
+// HERE BE TESTS
 // --------------------------------------------------
-
 #[test]
 fn fails_no_id() {
     let xml = r#"
@@ -638,6 +820,7 @@ fn fails_no_id() {
     assert!(res.is_err());
 }
 
+// --------------------------------------------------
 #[test]
 fn fails_no_attributres() {
     let xml = r#"
@@ -663,6 +846,7 @@ fn fails_no_attributres() {
     assert!(res.is_err());
 }
 
+// --------------------------------------------------
 #[test]
 fn test_parse_datetime() {
     let vs = vec![
@@ -693,6 +877,7 @@ fn test_parse_datetime() {
     }
 }
 
+// --------------------------------------------------
 #[test]
 fn test_month_to_int() {
     assert_eq!(month_to_int("nov"), Some(11));
@@ -701,6 +886,7 @@ fn test_month_to_int() {
     assert_eq!(month_to_int("foo"), None);
 }
 
+// --------------------------------------------------
 #[test]
 fn test_parse_depth() {
     assert_eq!(parse_depth("abc"), None);
@@ -720,4 +906,18 @@ fn test_parse_depth() {
     assert_eq!(parse_depth("5 millimeter"), Some(0.005));
     assert_eq!(parse_depth("0.005m"), Some(0.005));
     assert_eq!(parse_depth("5millimeters"), Some(0.005));
+}
+
+// --------------------------------------------------
+#[test]
+fn test_dms2decimal() {
+    assert_eq!(dms2decimal("41", "40", "13.5", &false), Some("41.67042".to_string()));
+    assert_eq!(dms2decimal("2", "48", "0.6", &false), Some("2.80017".to_string()));
+}
+
+// --------------------------------------------------
+#[test]
+fn test_parse_lat_lon_combined() {
+    assert_eq!(parse_lat_lon_combined("41º40,13.5''N 2º48'00.6''E"), 
+        Some(("41.67042".to_string(), "2.80017".to_string())));
 }
