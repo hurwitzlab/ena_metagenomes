@@ -530,6 +530,7 @@ sub process {
             $val =~ s/´/'/g;
 
             if ( $val =~ $LAT_LON_MIN_SEC ) {
+                print "1 $val";
                 my (
                     $lat_degree, $lat_min, $lat_sec, $ns,
                     $lon_degree, $lon_min, $lon_sec, $ew
@@ -541,12 +542,14 @@ sub process {
                 ( $ena{'latitude'}, $ena{'longitude'} ) = ( $lat, $lon );
             }
             elsif ( $val =~ $LAT_LON_RE ) {
+                print "2 $val";
                 my ( $lat, $ns, $lon, $ew ) = ( $1, $2, $3, $4 );
                 $lat *= $ns eq 'S' ? -1 : 1;
                 $lon *= $ew eq 'W' ? -1 : 1;
                 ( $ena{'latitude'}, $ena{'longitude'} ) = ( $lat, $lon );
             }
             elsif ( $val =~ $LAT_LON_DEGREE_MINUTE ) {
+                print "3 $val";
                 my ( $lat_degree, $lat_min, $ns, 
                     $lon_degree, $lon_min, $ew ) = ( $1, $2, $3, $4, $5, $6 );
                 my $lat = h2d( $lat_degree, $lat_min, 0);
@@ -557,6 +560,7 @@ sub process {
             }
             # 11.46'45.7" 93.01'22.3"
             elsif ( $val =~ $LAT_LON_DEGREE_MINUTE2 ) {
+                print "4 $val";
                 my ( $lat_dir, $lat_degree, $lat_min, $lat_sec,
                     $lon_dir, $lon_degree, $lon_min, $lon_sec ) = 
                     ( $1, $2, $3, $4, $5, $6, $7, $8 );
@@ -567,12 +571,15 @@ sub process {
                 ( $ena{'latitude'}, $ena{'longitude'} ) = ( $lat, $lon );
             }
             elsif ( $val =~ $LAT_LON_FLOAT ) {
+                print "5 $val";
                 ( $ena{'latitude'}, $ena{'longitude'} ) = ( $1, $2 );
             }
             elsif ( $val =~ $LAT_LON_INT ) {
+                print "6 $val";
                 ( $ena{'latitude'}, $ena{'longitude'} ) = ( $1, $2 );
             }
             elsif ( $val =~ $LAT_LON_NO_SEPARATOR ) {
+                print "7 $val";
                 my ( $lat_sign, $lat, $lon_sign, $lon ) = ( $1, $2, $3, $4 );
                 $lat *= $lat_sign eq '-' ? -1 : 1;
                 $lon *= $lon_sign eq '-' ? -1 : 1;
